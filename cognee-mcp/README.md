@@ -489,7 +489,7 @@ The MCP server exposes its functionality through tools. Call them from any MCP c
 The MCP server exposes three tools:
 
 - **remember**: Store data in memory. Pass `data` for text, or `filename` + `content_base64` to ingest an uploaded file (up to 10 MB). With `session_id`: fast session cache (text only). Without `session_id`: permanent graph memory
-- **recall**: Search memory with auto-routing. Searches session cache first when `session_id` is provided, then falls through to the permanent graph
+- **recall**: Search memory with auto-routing. Searches session cache first when `session_id` is provided, then falls through to the permanent graph. Set `only_context=True` to get back only the retrieved context for completion-type searches instead of an LLM-generated answer
 - **forget**: Delete memory by dataset name or id, a single data item by `data_id`, or delete all owned memory with `everything=True`
 - **cognify_status**: Check the progress of background ingestion started by `remember(background=True)`. Unadvertised by default; discoverable via `search_tools` and callable by name
 
@@ -562,6 +562,9 @@ remember(data="Temporary working note", session_id="agent-session-1")
 
 # Recall from memory
 recall(query="What changed in the MCP server?", session_id="agent-session-1")
+
+# Recall only the retrieved context (skips the LLM completion call)
+recall(query="What changed in the MCP server?", only_context=True)
 
 # Delete one dataset
 forget(dataset="main_dataset")

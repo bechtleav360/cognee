@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# cognee-frontend (fork)
 
-## Getting Started
+Next.js dashboard UI for this cognee fork. It replaces the upstream
+`create-next-app` boilerplate README. The full set of deviations lives in the
+`fork/*` branches, one concern each, with the reason in each commit body.
 
-First, run the development server:
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev            # http://localhost:3000, proxies /api/v1/* to localhost:8000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`next dev` uses the rewrites in `next.config.mjs` to reach a locally running
+cognee API (`BACKEND_API_URL`, default `http://localhost:8000`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Production build / Docker
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+Upstream only supports `next dev`; this fork ships a production multi-stage
+image (see `Dockerfile`) using Next.js `standalone` output with a non-root
+runtime:
 
-## Learn More
+```bash
+# from the repo root
+docker build -t cognee-frontend cognee-frontend/
+```
 
-To learn more about Next.js, take a look at the following resources:
+In `docker compose` and Kubernetes the browser calls the API same-origin
+(`/api/v1/...` on the frontend host) -- no backend URL is baked into the JS
+bundle. In k8s the router path-splits API routes to the API Service; in
+compose/`next dev` the Next.js rewrites proxy them.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Fork-specific gotchas
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+- **Proxied body size**: `experimental.proxyClientMaxBodySize` in
+  `next.config.mjs` raises the Next.js proxy's 10MB default body buffer --
+  without it, uploads over 10MB are silently truncated. Note the documented
+  `middlewareClientMaxBodySize` spelling is ignored by the runtime.
+- **Middleware**: `src/middleware.ts` only handles the `/` onboarding
+  redirect; its matcher is deliberately narrowed to `/`.
+- Server-side route handlers (`src/app/api/...`) read `BACKEND_API_URL` at
+  runtime.

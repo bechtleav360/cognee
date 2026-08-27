@@ -1134,6 +1134,7 @@ async def recall(
     datasets: str = None,
     session_id: str = None,
     top_k: int = 15,
+    only_context: bool = False,
 ) -> list:
     """Search memory with auto-routing and session awareness.
 
@@ -1158,6 +1159,10 @@ async def recall(
         Session ID for session-first search.
     top_k : int
         Maximum results to return (default: 10).
+    only_context : bool
+        If true, completion-type searches (e.g. GRAPH_COMPLETION,
+        RAG_COMPLETION) return only the retrieved context that would
+        be sent to the LLM, skipping the LLM call (default: false).
     """
     with redirect_stdout(sys.stderr):
         try:
@@ -1169,6 +1174,7 @@ async def recall(
                 datasets=dataset_list,
                 session_id=session_id,
                 top_k=normalized_top_k,
+                only_context=only_context,
             )
             return [
                 types.TextContent(

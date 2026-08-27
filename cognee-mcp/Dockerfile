@@ -1,3 +1,26 @@
+# =============================================================================
+# Cognee MCP server -- built from this repository's own cognee source.
+#
+# Fork deviations from upstream (topoteretes/cognee cognee-mcp/Dockerfile):
+#   * cognee is installed from the LOCAL source tree at the repo root instead
+#     of PyPI (see [tool.uv.sources] in cognee-mcp/pyproject.toml and the
+#     re-locked cognee-mcp/uv.lock), so local patches to cognee/** reach this
+#     image and it embeds the same cognee code as the API image (upstream's
+#     upstream's lock pinned PyPI cognee 1.2.2; this tree is 1.3.0).
+#   * The build context is therefore the REPO ROOT, not cognee-mcp/ alone,
+#     and the repo layout is mirrored under /app so the relative path
+#     dependency ("..") resolves identically at build and run time:
+#         /app/pyproject.toml, /app/cognee/, ...    <- cognee library source
+#         /app/cognee-mcp/                          <- this MCP server
+#     The venv lives at /app/cognee-mcp/.venv in BOTH stages so venv shebangs
+#     stay valid after the copy into the runtime stage.
+#   * Runtime files are group-0 writable (chmod g=u) for OpenShift's
+#     arbitrary-UID SCCs, mirroring the frontend image.
+#
+# Build from the repo root:
+#   docker build -f cognee-mcp/Dockerfile -t cognee-mcp .
+# =============================================================================
+
 # Build the MCP App workspace bundle (React/Vite, served inline by the MCP
 # server). Vite writes to ../src/app_bundles/ relative to apps-src, so we
 # mirror the repo layout: /build/cognee-mcp/{apps-src,src}.
@@ -12,14 +35,13 @@ RUN npm run build
 # Use a Python image with uv pre-installed
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS uv
 
-# Install the project into `/app`
-WORKDIR /app
-
-# Enable bytecode compilation
-# ENV UV_COMPILE_BYTECODE=1
-
 # Copy from the cache instead of linking since it's a mounted volume
 ENV UV_LINK_MODE=copy
+
+# Tolerate slow registries/mirrors: cognee[docs] pulls torch + multi-GB
+# NVIDIA CUDA wheels, which abort under uv's default 30s timeout on slow
+# networks.
+ENV UV_HTTP_TIMEOUT=300
 
 # Set build argument
 ARG DEBUG
@@ -34,6 +56,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# --- cognee library source (the ".." path dependency) ------------------------
+# Metadata first: pyproject.toml + README.md are what hatchling needs to build
+# the cognee wheel; the package sources follow.
+COPY README.md pyproject.toml LICENSE NOTICE.md /app/
+COPY ./cognee /app/cognee
+COPY ./distributed /app/distributed
+COPY ./cognee_db_workers /app/cognee_db_workers
+# Compatibility shim that re-exports ladybug under the legacy `kuzu` module
+# name (listed in cognee's [tool.hatch.build.targets.wheel] packages).
+COPY ./kuzu /app/kuzu
+
+# --- MCP server ---------------------------------------------------------------
+WORKDIR /app/cognee-mcp
+
 # Copy pyproject.toml and lockfile first for better caching
 COPY ./cognee-mcp/pyproject.toml ./cognee-mcp/uv.lock ./cognee-mcp/entrypoint.sh ./
 
@@ -43,16 +79,25 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows layer caching
-COPY ./cognee-mcp /app
+COPY ./cognee-mcp /app/cognee-mcp
 # Drop in the workspace bundle built by the node stage. Order matters: the
 # COPY above brings in `cognee-mcp/src/app_bundles/` (empty in CI/clean clones
 # because the bundle is gitignored, or stale on a developer's machine), and
 # this COPY then *shadows* it with the freshly-built bundle. uv sync below
 # packages this into the wheel installed into the venv; visualize_graph_ui
 # reads the bundle from its own neighbor directory inside site-packages.
-COPY --from=app-bundle /build/cognee-mcp/src/app_bundles /app/src/app_bundles
+COPY --from=app-bundle /build/cognee-mcp/src/app_bundles /app/cognee-mcp/src/app_bundles
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
+
+# Prepare the tree for the runtime stage HERE, so the final image gets it in
+# a single COPY layer (a runtime-stage `RUN chown/chmod -R` would re-store
+# the whole venv — torch + CUDA wheels included — in an extra layer,
+# ~doubling an already large image):
+#   * strip Windows carriage returns from entrypoint.sh
+#   * group-0 gets owner-equal rights (OpenShift arbitrary-UID SCCs)
+RUN sed -i 's/\r$//' /app/cognee-mcp/entrypoint.sh && chmod +x /app/cognee-mcp/entrypoint.sh \
+    && chmod -R g=u /app
 
 FROM python:3.12-slim-bookworm
 
@@ -60,33 +105,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Non-root user; ownership is applied by COPY --chown below (uid 1000, gid 0).
+RUN groupadd --system --gid 1000 cognee \
+    && useradd --system --uid 1000 --gid cognee --no-create-home --shell /usr/sbin/nologin cognee
+
+WORKDIR /app/cognee-mcp
 
 # Copy the virtual environment from the uv stage
 COPY --from=uv /usr/local /usr/local
-COPY --from=uv /app /app
-
-# Strip Windows carriage returns (fixes "no such file" on Windows Docker)
-RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
-
-# Run as a non-root user. Create the user before copying ownership so the
-# /app tree (which already exists from the COPY above) is readable.
-RUN groupadd --system --gid 1000 cognee \
-    && useradd --system --uid 1000 --gid cognee --no-create-home --shell /usr/sbin/nologin cognee \
-    && chown -R cognee:cognee /app
+COPY --from=uv --chown=1000:0 /app /app
 
 # Place executables in the environment at the front of the path
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/cognee-mcp/.venv/bin:$PATH"
 
 # Set environment variables for MCP server
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/cognee-mcp
 # Give the non-root user a stable, writable HOME so Kuzu/Ladybug caches its
 # downloaded extensions in a consistent location across build and runtime.
 ENV HOME=/app
 
 # Add labels for API mode usage
-LABEL org.opencontainers.image.description="Cognee MCP Server with API mode support"
+LABEL org.opencontainers.image.description="Cognee MCP Server with API mode support (from-source build)"
 
 USER cognee
 
@@ -96,9 +136,11 @@ USER cognee
 # where the running server looks for it — avoiding the "Extension: json ... has
 # not been installed" Binder error when recall runs in a network-restricted
 # container. Best-effort: a failed download must not break the image build.
+# (Not exercised when GRAPH_DATABASE_PROVIDER=postgres, but kept so the image
+# also works with the embedded Ladybug/Kuzu graph store.)
 RUN python -c "from cognee_db_workers._kuzu_helpers import install_json_extension_local; install_json_extension_local(buffer_pool_size=268435456)" \
     || echo "WARNING: JSON extension pre-install skipped (no network at build time); it will be installed on first run if the container has network access."
 
 # Use the application name from pyproject.toml for normal operation
 # For testing, we'll override this with a direct command
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/cognee-mcp/entrypoint.sh"]

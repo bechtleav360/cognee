@@ -463,9 +463,31 @@ export function AgentActivityTerminal({
     }
     demoStartedRef.current = true; // never replays within this mount (e.g. after "clear searches")
     let cancelled = false;
-    try { localStorage.setItem("cognee-terminal-demo-shown", "1"); } catch {}
-    setDemoEntries(DEMO_QUERIES.map(q => ({ query: q, result: null, status: "idle" as const })));
     (async () => {
+      // Vendoring deviation from upstream: only demo against datasets whose
+      // processing has actually COMPLETED. The trigger conditions above say
+      // nothing about pipeline state, so on a fresh account the demo used to
+      // race a still-running cognify and surface NoDataError 404s that read
+      // as a failed upload.
+      let readyDatasetIds: string[] = [];
+      try {
+        const response = await cogniInstance.fetch("/v1/datasets/status");
+        if (response.ok) {
+          const statuses: Record<string, string> = await response.json();
+          readyDatasetIds = datasets
+            .filter((d) => statuses[d.id] === "DATASET_PROCESSING_COMPLETED")
+            .map((d) => d.id);
+        }
+      } catch { /* status unavailable — treat as not ready */ }
+      if (cancelled) return;
+      if (readyDatasetIds.length === 0) {
+        // Nothing fully processed yet. Release the one-shot guard and skip the
+        // localStorage flag so the demo can still play on a later visit.
+        demoStartedRef.current = false;
+        return;
+      }
+      try { localStorage.setItem("cognee-terminal-demo-shown", "1"); } catch {}
+      setDemoEntries(DEMO_QUERIES.map(q => ({ query: q, result: null, status: "idle" as const })));
       const { default: recallKnowledge } = await import("@/modules/datasets/recallKnowledge");
       for (let i = 0; i < DEMO_QUERIES.length; i++) {
         if (cancelled) return;
@@ -476,7 +498,7 @@ export function AgentActivityTerminal({
           const data = await recallKnowledge(cogniInstance, {
             query: DEMO_QUERIES[i],
             scope: "graph" as never,
-            datasetIds: datasets.map(d => d.id),
+            datasetIds: readyDatasetIds,
           });
           if (cancelled) return;
           const entries = extractDatasetResults(data);

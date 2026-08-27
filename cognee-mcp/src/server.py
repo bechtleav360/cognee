@@ -549,6 +549,7 @@ async def recall(
     scope: str | None = None,
     code_query: dict | None = None,
     include_references: bool = False,
+    only_context: bool = False,
 ) -> list:
     """Search memory with auto-routing and session awareness.
 
@@ -613,6 +614,10 @@ async def recall(
         Session hits are not stored data and get neither. With backend
         access control off, ids are only shown when recall is scoped to a
         single dataset.
+    only_context : bool
+        If true, completion-type searches (e.g. GRAPH_COMPLETION,
+        RAG_COMPLETION) return only the retrieved context that would
+        be sent to the LLM, skipping the LLM call (default: false).
 
     Returns a one-line memory-hit or empty-state summary followed by the original
     result text. Status markers do not count as hits. Empty-state checks are
@@ -635,6 +640,7 @@ async def recall(
                 scope=scope_list or None,
                 code_query=code_query,
                 include_references=include_references,
+                only_context=only_context,
             )
             empty_state = recall_marker_state(results)
             items = recall_items(results)

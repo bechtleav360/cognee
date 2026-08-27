@@ -56,15 +56,14 @@ function CheckIcon() {
   );
 }
 
-const localApiUrl = process.env.NEXT_PUBLIC_LOCAL_API_URL || "http://localhost:8000";
-
 export default function ApiKeysPage() {
   const { cogniInstance, serviceUrl, isInitializing } = useCogniInstance();
   const { tenant, hasAccess, tenantReady } = useTenant();
   const isCloud = isCloudEnvironment();
-  // In cloud, never fall back to localhost — show the real tenant URL when known,
-  // otherwise treat as provisioning. Only local/OSS mode uses localApiUrl.
-  const baseUrl = isCloud ? serviceUrl : (serviceUrl || localApiUrl);
+  // serviceUrl: cloud = tenant URL (null while provisioning); local/OSS =
+  // the frontend's own origin, set by LocalProvider after mount (the API is
+  // served same-origin behind the path-splitting router).
+  const baseUrl = serviceUrl;
   const urlProvisioning = isCloud && !serviceUrl;
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +77,9 @@ export default function ApiKeysPage() {
   // Use tenant ID from context (set during provisioning), not from /users/me
   const tenantId = tenant?.tenant_id || null;
   const isDev = serviceUrl?.includes("dev-aws") || serviceUrl?.includes("dev.cloud");
-  const apiDocsUrl = serviceUrl ? `${serviceUrl}/docs` : null;
+  // Local/OSS mode: relative link — the router (or the next.config.mjs
+  // rewrites in `next dev`) sends /docs to the backend's Swagger UI.
+  const apiDocsUrl = isCloud ? (serviceUrl ? `${serviceUrl}/docs` : null) : "/docs";
 
   useEffect(() => {
     if (isInitializing || !cogniInstance) return;

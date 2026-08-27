@@ -4,8 +4,8 @@ Repeated runs of QA evaluation on 24-item HotpotQA subset, comparing Mem0, Graph
 
 ## Dataset
 
-- `hotpot_qa_24_corpus.json` and `hotpot_qa_24_qa_pairs.json`
-- `hotpot_qa_24_instance_filter.json` for instance filtering
+- `src/hotpot_qa_24_corpus.json` and `src/hotpot_qa_24_qa_pairs.json`
+- `src/hotpot_qa_24_instance_filter.json` for instance filtering
 
 ## Systems Evaluated
 
@@ -30,7 +30,7 @@ Repeated runs of QA evaluation on 24-item HotpotQA subset, comparing Mem0, Graph
 ## Running Benchmarks (Modal)
 
 Execute repeated runs via Modal apps:
-- `modal run modal_apps/modal_qa_benchmark_<system>.py`
+- `modal run src/modal_apps/modal_qa_benchmark_<system>.py`
 
 Where `<system>` is one of: `mem0`, `graphiti`, `lightrag`, `cognee`
 
@@ -38,10 +38,10 @@ Raw results stored in Modal volumes under `/qa-benchmarks/<benchmark>/{answers,e
 
 ## Results Analysis
 
-- `python run_cross_benchmark_analysis.py`
+- `python src/run_cross_benchmark_analysis.py`
 - Downloads Modal volumes, processes evaluated JSONs
 - Generates per-benchmark CSVs and cross-benchmark summary
-- Use `visualize_benchmarks.py` to create comparison charts
+- Use `src/visualize_benchmarks.py` to create comparison charts
 
 ## Results
 

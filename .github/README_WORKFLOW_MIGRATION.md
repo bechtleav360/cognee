@@ -1,6 +1,6 @@
 # Workflow Migration to Test Suites
 
-This document explains how to ensure all test workflows are only run through the central test-suites.yml workflow.
+This document explains how to ensure all test workflows are only run through the central test_suites.yml workflow.
 
 ## Why Migrate to Test Suites?
 
@@ -11,7 +11,7 @@ This document explains how to ensure all test workflows are only run through the
 
 ## Automated Migration
 
-We've provided a script to automatically convert individual workflows to only run when called by the test-suites.yml file:
+We've provided a script to automatically convert individual workflows to only run when called by the test_suites.yml file:
 
 ```bash
 # Make the script executable
@@ -23,7 +23,7 @@ chmod +x .github/workflows/disable_independent_workflows.sh
 
 ## Manual Migration
 
-For each workflow file that should only run through test-suites.yml:
+For each workflow file that should only run through test_suites.yml:
 
 1. Open the workflow file
 2. Find the `on:` section, which typically looks like:
@@ -49,8 +49,8 @@ For each workflow file that should only run through test-suites.yml:
 After modifying the workflows, verify that:
 
 1. The workflows no longer trigger on pushes or PRs
-2. The workflows still run correctly when called by test-suites.yml
-3. No tests are left out of the test-suites.yml orchestrator
+2. The workflows still run correctly when called by test_suites.yml
+3. No tests are left out of the test_suites.yml orchestrator
 
 ## Example Conversion
 

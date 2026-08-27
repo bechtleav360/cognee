@@ -1,6 +1,6 @@
 
 # Example helm chart
-Example Helm chart fro Cognee with PostgreSQL and pgvector extension
+Example Helm chart for Cognee with PostgreSQL and pgvector extension
 It is not ready for production usage
 
 ## Prerequisites
@@ -30,6 +30,6 @@ Clone the Repository Clone this repository to your local machine and navigate t
 ## Port forwarding
 To access cognee, run
 ```
-kubectl port-forward svc/cognee-service -n cognee 8000
+kubectl port-forward svc/cognee-service -n cognee 8000:8000
 ```
 it will be available at localhost:8000

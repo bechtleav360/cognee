@@ -133,6 +133,48 @@ def _get_payload(obj: Any) -> Optional[dict]:
     return None
 
 
+def _page_suffix(payload: dict) -> str:
+    """Render a ', page N' / ', page N-M' annotation, or '' when not derivable.
+
+    Reads page_start/page_end as set by page_markers.stamp_page_range() during
+    chunking. Both are None when the source format/loader couldn't determine a
+    page (e.g. plain pasted text) -- in that case no page is rendered, rather
+    than fabricating one.
+    """
+    start = payload.get("page_start")
+    end = payload.get("page_end")
+    if not isinstance(start, int) or isinstance(start, bool):
+        return ""
+    if not isinstance(end, int) or isinstance(end, bool):
+        end = start
+    return f", page {start}" if start == end else f", page {start}-{end}"
+
+
+def _section_suffix(payload: dict) -> str:
+    """Render a ', section: <breadcrumb>' annotation, or '' when absent.
+
+    Reads the section breadcrumb set by section_markers.stamp_section_heading()
+    during chunking -- a fallback for sources with no page/slide numbers (e.g.
+    plain Markdown/text) that nonetheless have real heading structure.
+    """
+    section = payload.get("section")
+    if not isinstance(section, str) or not section.strip():
+        return ""
+    return f", section: {section.strip()}"
+
+
+def _location_suffix(payload: dict) -> str:
+    """Page suffix when derivable, else section suffix, else ''.
+
+    Page and section are mutually exclusive in practice (a source either has
+    real pages/slides, via a PDF/pptx/etc. loader, or Markdown headings, not
+    both) -- page wins when, rarely, both are present, since it's the more
+    precise locator.
+    """
+    page_suffix = _page_suffix(payload)
+    return page_suffix if page_suffix else _section_suffix(payload)
+
+
 def _provenance_suffix(data_id: Optional[str], chunk_id: Optional[str]) -> str:
     """Render a '(data_id: …, chunk_id: …)' annotation for whichever ids exist.
 
@@ -216,8 +258,8 @@ def format_chunk_references(
             # rather than presenting unverifiable retrieval order as provenance.
             return ""
 
-    # (overlap_score, document_name, number, text, data_id, chunk_id) per candidate.
-    candidates: List[Tuple[int, str, int, str, Optional[str], Optional[str]]] = []
+    # (overlap_score, document_name, number, text, data_id, chunk_id, location_suffix) per candidate.
+    candidates: List[Tuple[int, str, int, str, Optional[str], Optional[str], str]] = []
     seen: set = set()
 
     for obj in iterator:
@@ -230,7 +272,8 @@ def format_chunk_references(
         text = _clean_str(payload.get("text"))
 
         # Document name and a chunk number are both required to ground the
-        # citation; text is required for a meaningful snippet.
+        # citation; text is required for a meaningful snippet. Page/section
+        # is purely additive (see _location_suffix) -- never required.
         if document_name is None or number is None or text is None:
             continue
 
@@ -239,6 +282,7 @@ def format_chunk_references(
         # Document.id = data.id), i.e. the dataId a caller needs to map a
         # citation back to the document they ingested.
         data_id = _clean_str(payload.get("document_id"))
+        location_suffix = _location_suffix(payload)
 
         dedup_key = chunk_id or f"{document_name}#{number}"
         if dedup_key in seen:
@@ -254,7 +298,7 @@ def format_chunk_references(
                 # certainly not a source of the answer.
                 continue
 
-        candidates.append((score, document_name, number, text, data_id, chunk_id))
+        candidates.append((score, document_name, number, text, data_id, chunk_id, location_suffix))
 
     if not candidates:
         return ""
@@ -265,9 +309,11 @@ def format_chunk_references(
 
     max_bullets = _clamp_limit(limit)
     bullets = [
-        f"- chunk {number} of document {document_name}"
+        f"- chunk {number} of document {document_name}{location_suffix}"
         f'{_provenance_suffix(data_id, chunk_id)}: "{_snippet(text)}"'
-        for _, document_name, number, text, data_id, chunk_id in candidates[:max_bullets]
+        for _, document_name, number, text, data_id, chunk_id, location_suffix in candidates[
+            :max_bullets
+        ]
     ]
 
     return EVIDENCE_HEADER + "\n" + "\n".join(bullets)

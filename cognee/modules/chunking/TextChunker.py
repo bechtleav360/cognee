@@ -4,6 +4,8 @@ from uuid import NAMESPACE_OID, uuid5
 
 from cognee.tasks.chunks import chunk_by_paragraph
 from cognee.modules.chunking.Chunker import Chunker
+from cognee.modules.chunking.page_markers import stamp_page_range
+from cognee.modules.chunking.section_markers import stamp_section_heading
 from .models.DocumentChunk import DocumentChunk
 
 logger = get_logger()
@@ -14,6 +16,8 @@ class TextChunker(Chunker):
         document_id = str(self.document.id)
         document_name = self.document.name or basename(self.document.raw_data_location)
         paragraph_chunks = []
+        current_page = None
+        current_headings = {}
         async for content_text in self.get_text():
             for chunk_data in chunk_by_paragraph(
                 content_text,
@@ -25,6 +29,12 @@ class TextChunker(Chunker):
                     self.chunk_size += chunk_data["chunk_size"]
                 else:
                     if len(paragraph_chunks) == 0:
+                        page_start, page_end, current_page = stamp_page_range(
+                            chunk_data["text"], current_page
+                        )
+                        section, current_headings = stamp_section_heading(
+                            chunk_data["text"], current_headings
+                        )
                         yield DocumentChunk(
                             id=chunk_data["chunk_id"],
                             text=chunk_data["text"],
@@ -36,6 +46,9 @@ class TextChunker(Chunker):
                             importance_weight=self.document.importance_weight,
                             document_id=document_id,
                             document_name=document_name,
+                            page_start=page_start,
+                            page_end=page_end,
+                            section=section,
                             metadata={
                                 "index_fields": ["text"],
                             },
@@ -44,6 +57,12 @@ class TextChunker(Chunker):
                         self.chunk_size = 0
                     else:
                         chunk_text = " ".join(chunk["text"] for chunk in paragraph_chunks)
+                        page_start, page_end, current_page = stamp_page_range(
+                            chunk_text, current_page
+                        )
+                        section, current_headings = stamp_section_heading(
+                            chunk_text, current_headings
+                        )
                         try:
                             yield DocumentChunk(
                                 id=uuid5(
@@ -58,6 +77,9 @@ class TextChunker(Chunker):
                                 importance_weight=self.document.importance_weight,
                                 document_id=document_id,
                                 document_name=document_name,
+                                page_start=page_start,
+                                page_end=page_end,
+                                section=section,
                                 metadata={
                                     "index_fields": ["text"],
                                 },
@@ -71,10 +93,13 @@ class TextChunker(Chunker):
                     self.chunk_index += 1
 
         if len(paragraph_chunks) > 0:
+            final_text = " ".join(chunk["text"] for chunk in paragraph_chunks)
+            page_start, page_end, current_page = stamp_page_range(final_text, current_page)
+            section, current_headings = stamp_section_heading(final_text, current_headings)
             try:
                 yield DocumentChunk(
                     id=uuid5(NAMESPACE_OID, f"{str(self.document.id)}-{self.chunk_index}"),
-                    text=" ".join(chunk["text"] for chunk in paragraph_chunks),
+                    text=final_text,
                     chunk_size=self.chunk_size,
                     is_part_of=self.document,
                     chunk_index=self.chunk_index,
@@ -83,6 +108,9 @@ class TextChunker(Chunker):
                     importance_weight=self.document.importance_weight,
                     document_id=document_id,
                     document_name=document_name,
+                    page_start=page_start,
+                    page_end=page_end,
+                    section=section,
                     metadata={"index_fields": ["text"]},
                 )
             except Exception as e:

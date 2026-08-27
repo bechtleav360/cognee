@@ -4,6 +4,8 @@ from uuid import NAMESPACE_OID, uuid5
 
 from cognee.tasks.chunks import chunk_by_paragraph
 from cognee.modules.chunking.Chunker import Chunker
+from cognee.modules.chunking.page_markers import stamp_page_range
+from cognee.modules.chunking.section_markers import stamp_section_heading
 from .models.DocumentChunk import DocumentChunk
 
 logger = get_logger()
@@ -22,6 +24,8 @@ class TextChunkerWithOverlap(Chunker):
         self.document_name = document.name or basename(document.raw_data_location)
         self._accumulated_chunk_data = []
         self._accumulated_size = 0
+        self._current_page = None
+        self._current_headings = {}
         self.chunk_overlap_ratio = chunk_overlap_ratio
         self.chunk_overlap = int(max_chunk_size * chunk_overlap_ratio)
 
@@ -69,6 +73,8 @@ class TextChunkerWithOverlap(Chunker):
 
     def _create_chunk(self, text, size, cut_type, chunk_id=None):
         """Create a DocumentChunk with standard metadata."""
+        page_start, page_end, self._current_page = stamp_page_range(text, self._current_page)
+        section, self._current_headings = stamp_section_heading(text, self._current_headings)
         try:
             return DocumentChunk(
                 id=chunk_id or uuid5(NAMESPACE_OID, f"{str(self.document.id)}-{self.chunk_index}"),
@@ -80,6 +86,9 @@ class TextChunkerWithOverlap(Chunker):
                 contains=[],
                 document_id=str(self.document.id),
                 document_name=self.document_name,
+                page_start=page_start,
+                page_end=page_end,
+                section=section,
                 metadata={"index_fields": ["text"]},
             )
         except Exception as e:

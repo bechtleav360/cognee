@@ -105,13 +105,28 @@ class UnstructuredLoader(LoaderInterface):
             # Use partition to extract elements
             elements = partition(**partition_kwargs)
 
-            # Process elements into text content
+            # Process elements into text content. Prefix a "Page N:" marker
+            # (same convention as PyPdfLoader/AdvancedPdfLoader) whenever the
+            # page number changes, so page_markers.stamp_page_range() can
+            # recover page_start/page_end downstream regardless of source
+            # format. unstructured populates element.metadata.page_number for
+            # many formats (e.g. it's the slide index for pptx); it's often
+            # None for formats with no real pagination (html, email, ...),
+            # in which case no marker is emitted for that element.
             text_parts = []
+            last_page_number = None
 
             for element in elements:
                 element_text = str(element).strip()
-                if element_text:
-                    text_parts.append(element_text)
+                if not element_text:
+                    continue
+
+                page_number = getattr(getattr(element, "metadata", None), "page_number", None)
+                if page_number is not None and page_number != last_page_number:
+                    text_parts.append(f"Page {page_number}:")
+                    last_page_number = page_number
+
+                text_parts.append(element_text)
 
             # Combine all text content
             full_content = "\n\n".join(text_parts)

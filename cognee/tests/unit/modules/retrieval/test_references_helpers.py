@@ -198,6 +198,87 @@ def test_answer_none_keeps_all_usable_candidates():
 
 
 # ---------------------------------------------------------------------------
+# page suffix rendering (page_start/page_end -> ", page N" / ", page N-M")
+# ---------------------------------------------------------------------------
+
+
+def test_format_chunk_references_renders_single_page():
+    result = format_chunk_references([_payload(page_start=338, page_end=338)])
+
+    assert "- chunk 5 of document annual_report.pdf, page 338:" in result
+
+
+def test_format_chunk_references_renders_page_range():
+    result = format_chunk_references([_payload(page_start=338, page_end=339)])
+
+    assert "- chunk 5 of document annual_report.pdf, page 338-339:" in result
+
+
+def test_format_chunk_references_omits_page_when_not_derivable():
+    """No page_start/page_end at all (e.g. plain pasted text) -> no page shown, unchanged bullet."""
+    result = format_chunk_references([_payload()])
+
+    assert "- chunk 5 of document annual_report.pdf:" in result
+    assert "page" not in result.split("\n", 1)[1]
+
+
+def test_format_chunk_references_omits_page_when_fields_are_null():
+    result = format_chunk_references([_payload(page_start=None, page_end=None)])
+
+    assert "- chunk 5 of document annual_report.pdf:" in result
+
+
+def test_format_chunk_references_page_suffix_ignores_non_int_values():
+    """Malformed page fields (e.g. a stray string) never crash or render garbage."""
+    result = format_chunk_references([_payload(page_start="not-a-page", page_end=339)])
+
+    assert "- chunk 5 of document annual_report.pdf:" in result
+
+
+# ---------------------------------------------------------------------------
+# section suffix rendering (fallback for sources with no page, e.g. Markdown)
+# ---------------------------------------------------------------------------
+
+
+def test_format_chunk_references_renders_section_when_no_page():
+    result = format_chunk_references(
+        [_payload(section="1 PMflex-Projektmanagement als Teil des PMflex-Systems")]
+    )
+
+    assert (
+        "- chunk 5 of document annual_report.pdf, "
+        "section: 1 PMflex-Projektmanagement als Teil des PMflex-Systems:" in result
+    )
+
+
+def test_format_chunk_references_page_wins_over_section_when_both_present():
+    """Page is the more precise locator; section is only a fallback."""
+    result = format_chunk_references([_payload(page_start=12, page_end=12, section="Chapter One")])
+
+    assert "- chunk 5 of document annual_report.pdf, page 12:" in result
+    assert "section" not in result
+
+
+def test_format_chunk_references_omits_section_when_absent():
+    result = format_chunk_references([_payload(section=None)])
+
+    assert "- chunk 5 of document annual_report.pdf:" in result
+
+
+def test_format_chunk_references_section_suffix_ignores_non_str_values():
+    """A malformed section field (e.g. an int) never crashes or renders garbage."""
+    result = format_chunk_references([_payload(section=123)])
+
+    assert "- chunk 5 of document annual_report.pdf:" in result
+
+
+def test_format_chunk_references_section_suffix_ignores_blank_string():
+    result = format_chunk_references([_payload(section="   ")])
+
+    assert "- chunk 5 of document annual_report.pdf:" in result
+
+
+# ---------------------------------------------------------------------------
 # build_answer_grounded_chunk_references
 # ---------------------------------------------------------------------------
 

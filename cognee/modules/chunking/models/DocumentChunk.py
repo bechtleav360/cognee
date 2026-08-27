@@ -28,6 +28,14 @@ class DocumentChunk(DataPoint):
     - external_metadata: The parent document's external_metadata as JSON text, copied onto
     every new chunk so hybrid retrieval can surface allowlisted keys; None when the document
     carries none.
+    - page_start: 1-based page/slide number this chunk starts on, when derivable from the
+    source (PDF, or docx/pptx/etc. via the unstructured loader). None when not derivable.
+    - page_end: 1-based page/slide number this chunk ends on. Equal to page_start unless the
+    chunk spans multiple pages.
+    - section: Markdown heading breadcrumb ("H1 > H2 > ...") in effect for this chunk, for
+    sources with no page structure (e.g. plain Markdown/text). None when no heading has been
+    seen, or the source has no Markdown headings (most real PDFs use page_start/page_end
+    instead).
     - metadata: A dictionary to hold meta information related to the chunk, including index
     fields.
     """
@@ -63,6 +71,13 @@ class DocumentChunk(DataPoint):
     # and not part of id/dedup.
     truth_alignment: list[float] | None = None
     truth_epoch: int | None = None
+    # Optional page/slide provenance; never embedded (kept out of index_fields).
+    # None when the source format/loader can't determine a page (see page_markers.py).
+    page_start: int | None = None
+    page_end: int | None = None
+    # Optional section breadcrumb; never embedded (kept out of index_fields).
+    # None when the source has no Markdown headings (see section_markers.py).
+    section: str | None = None
     metadata: dict = {"index_fields": ["text"]}
 
     # Two records of the same extraction, kept apart because their readers

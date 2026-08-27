@@ -217,6 +217,9 @@ class IndexSchema(DataPoint):
     # Document external_metadata as JSON text, copied onto chunks at ingest so
     # hybrid retrieval can surface allowlisted keys straight from the payload.
     external_metadata: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    section: str | None = None
 
     metadata: dict = {"index_fields": ["text"]}
     belongs_to_set: list[str] = []
@@ -780,6 +783,9 @@ class PGVectorAdapter(SQLAlchemyAdapter, VectorDBInterface):
                     source_chunk_id=getattr(data_point, "source_chunk_id", None),
                     importance_weight=getattr(data_point, "importance_weight", None),
                     external_metadata=getattr(data_point, "external_metadata", None),
+                    page_start=getattr(data_point, "page_start", None),
+                    page_end=getattr(data_point, "page_end", None),
+                    section=getattr(data_point, "section", None),
                     belongs_to_set=(data_point.belongs_to_set or []),
                 )
                 for data_point in data_points

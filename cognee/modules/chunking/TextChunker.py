@@ -2,6 +2,8 @@ from os.path import basename
 
 from cognee.modules.chunking.chunk_id import chunk_content_hash, content_chunk_id
 from cognee.modules.chunking.Chunker import Chunker
+from cognee.modules.chunking.page_markers import PageTracker
+from cognee.modules.chunking.section_markers import SectionTracker
 from cognee.shared.logging_utils import get_logger
 from cognee.tasks.chunks import chunk_by_paragraph
 
@@ -27,6 +29,12 @@ class TextChunker(Chunker):
             hash_occurrences[content_hash] = occurrence + 1
             return content_chunk_id(document_id, content_hash, occurrence), content_hash
 
+        # One tracker per document: it carries the current page across chunks that
+        # contain no marker of their own.
+        page_tracker = PageTracker()
+        # Sibling of page_tracker: the fallback for sources with no pagination.
+        section_tracker = SectionTracker()
+
         async for content_text in self.get_text():
             for chunk_data in chunk_by_paragraph(
                 content_text,
@@ -39,6 +47,8 @@ class TextChunker(Chunker):
                 else:
                     if len(paragraph_chunks) == 0:
                         chunk_id, content_hash = chunk_identity(chunk_data["text"])
+                        page_start, page_end = page_tracker.stamp(chunk_data["text"])
+                        section = section_tracker.stamp(chunk_data["text"])
                         yield DocumentChunk(
                             chunker_id=self.chunker_id,
                             id=chunk_id,
@@ -53,6 +63,9 @@ class TextChunker(Chunker):
                             importance_weight=self.document.importance_weight,
                             document_id=document_id,
                             document_name=document_name,
+                            page_start=page_start,
+                            page_end=page_end,
+                            section=section,
                             metadata={
                                 "index_fields": ["text"],
                             },
@@ -61,6 +74,8 @@ class TextChunker(Chunker):
                         self.chunk_size = 0
                     else:
                         chunk_text = "".join(chunk["text"] for chunk in paragraph_chunks)
+                        page_start, page_end = page_tracker.stamp(chunk_text)
+                        section = section_tracker.stamp(chunk_text)
                         try:
                             chunk_id, content_hash = chunk_identity(chunk_text)
                             yield DocumentChunk(
@@ -77,6 +92,9 @@ class TextChunker(Chunker):
                                 importance_weight=self.document.importance_weight,
                                 document_id=document_id,
                                 document_name=document_name,
+                                page_start=page_start,
+                                page_end=page_end,
+                                section=section,
                                 metadata={
                                     "index_fields": ["text"],
                                 },
@@ -93,6 +111,8 @@ class TextChunker(Chunker):
             try:
                 chunk_text = "".join(chunk["text"] for chunk in paragraph_chunks)
                 chunk_id, content_hash = chunk_identity(chunk_text)
+                page_start, page_end = page_tracker.stamp(chunk_text)
+                section = section_tracker.stamp(chunk_text)
                 yield DocumentChunk(
                     chunker_id=self.chunker_id,
                     id=chunk_id,
@@ -107,6 +127,9 @@ class TextChunker(Chunker):
                     importance_weight=self.document.importance_weight,
                     document_id=document_id,
                     document_name=document_name,
+                    page_start=page_start,
+                    page_end=page_end,
+                    section=section,
                     metadata={"index_fields": ["text"]},
                 )
             except Exception as e:

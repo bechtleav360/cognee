@@ -3,6 +3,8 @@ from os.path import basename
 from uuid import NAMESPACE_OID, uuid5
 
 from cognee.modules.chunking.Chunker import Chunker
+from cognee.modules.chunking.page_markers import PageTracker
+from cognee.modules.chunking.section_markers import SectionTracker
 from cognee.shared.logging_utils import get_logger
 from cognee.tasks.chunks import chunk_by_paragraph
 
@@ -26,6 +28,11 @@ class TextChunkerWithOverlap(Chunker):
         self.document_name = document.name or basename(document.raw_data_location)
         self._accumulated_chunk_data = []
         self._accumulated_size = 0
+        # One tracker per document: it carries the current page across chunks that
+        # contain no marker of their own.
+        self._page_tracker = PageTracker()
+        # Sibling of _page_tracker: the fallback for sources with no pagination.
+        self._section_tracker = SectionTracker()
         self.chunk_overlap_ratio = chunk_overlap_ratio
         self.chunk_overlap = int(max_chunk_size * chunk_overlap_ratio)
 
@@ -73,6 +80,8 @@ class TextChunkerWithOverlap(Chunker):
 
     def _create_chunk(self, text, size, cut_type, chunk_id=None):
         """Create a DocumentChunk with standard metadata."""
+        page_start, page_end = self._page_tracker.stamp(text)
+        section = self._section_tracker.stamp(text)
         try:
             return DocumentChunk(
                 chunker_id=self.chunker_id,
@@ -86,6 +95,9 @@ class TextChunkerWithOverlap(Chunker):
                 document_id=str(self.document.id),
                 document_name=self.document_name,
                 importance_weight=self.document.importance_weight,
+                page_start=page_start,
+                page_end=page_end,
+                section=section,
                 metadata={"index_fields": ["text"]},
             )
         except Exception as e:

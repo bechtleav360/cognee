@@ -20,7 +20,7 @@ when there is nothing usable, and never raise on backend failures.
 """
 
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 from cognee.shared.logging_utils import get_logger
 
@@ -240,6 +240,65 @@ def _get_payload(obj: Any) -> dict | None:
     return None
 
 
+class _Candidate(NamedTuple):
+    """One chunk eligible to become an Evidence bullet.
+
+    Named rather than a positional tuple: the bullet is assembled from six
+    different fields, and a positional unpack at that width is where a future
+    field lands in the wrong slot without anything failing.
+    """
+
+    score: int
+    document_name: str
+    number: int
+    text: str
+    data_id: str | None
+    chunk_id: str | None
+    location_suffix: str
+
+
+def _page_suffix(payload: dict) -> str:
+    """Render a ', page N' / ', page N-M' annotation, or '' when not derivable.
+
+    Reads page_start/page_end as stamped by chunking/page_markers.py during
+    chunking. Both are None when the source format/loader couldn't determine a
+    page (e.g. plain pasted text) -- in that case no page is rendered, rather
+    than fabricating one.
+    """
+    start = payload.get("page_start")
+    end = payload.get("page_end")
+    if not isinstance(start, int) or isinstance(start, bool):
+        return ""
+    if not isinstance(end, int) or isinstance(end, bool):
+        end = start
+    return f", page {start}" if start == end else f", page {start}-{end}"
+
+
+def _section_suffix(payload: dict) -> str:
+    """Render a ', section: <breadcrumb>' annotation, or '' when absent.
+
+    Reads the section breadcrumb stamped by chunking/section_markers.py
+    during chunking -- a fallback for sources with no page/slide numbers (e.g.
+    plain Markdown/text) that nonetheless have real heading structure.
+    """
+    section = payload.get("section")
+    if not isinstance(section, str) or not section.strip():
+        return ""
+    return f", section: {section.strip()}"
+
+
+def _location_suffix(payload: dict) -> str:
+    """Page suffix when derivable, else section suffix, else ''.
+
+    Page and section are mutually exclusive in practice (a source either has
+    real pages/slides, via a PDF/pptx/etc. loader, or Markdown headings, not
+    both) -- page wins when, rarely, both are present, since it's the more
+    precise locator.
+    """
+    page_suffix = _page_suffix(payload)
+    return page_suffix if page_suffix else _section_suffix(payload)
+
+
 def _provenance_suffix(data_id: str | None, chunk_id: str | None) -> str:
     """Render a '(data_id: …, chunk_id: …)' annotation for whichever ids exist.
 
@@ -323,8 +382,7 @@ def format_chunk_references(
             # rather than presenting unverifiable retrieval order as provenance.
             return ""
 
-    # (overlap_score, document_name, number, text, data_id, chunk_id) per candidate.
-    candidates: list[tuple[int, str, int, str, str | None, str | None]] = []
+    candidates: list[_Candidate] = []
     seen: set = set()
 
     for obj in iterator:
@@ -337,7 +395,8 @@ def format_chunk_references(
         text = _clean_str(payload.get("text"))
 
         # Document name and a chunk number are both required to ground the
-        # citation; text is required for a meaningful snippet.
+        # citation; text is required for a meaningful snippet. Page/section
+        # is purely additive (see _location_suffix) -- never required.
         if document_name is None or number is None or text is None:
             continue
 
@@ -361,20 +420,32 @@ def format_chunk_references(
                 # certainly not a source of the answer.
                 continue
 
-        candidates.append((score, document_name, number, text, data_id, chunk_id))
+        candidates.append(
+            _Candidate(
+                score=score,
+                document_name=document_name,
+                number=number,
+                text=text,
+                data_id=data_id,
+                chunk_id=chunk_id,
+                location_suffix=_location_suffix(payload),
+            )
+        )
 
     if not candidates:
         return ""
 
     if answer_terms is not None:
         # Stable sort: highest answer overlap first, retrieval order as tiebreak.
-        candidates.sort(key=lambda candidate: -candidate[0])
+        candidates.sort(key=lambda candidate: -candidate.score)
 
     max_bullets = _clamp_limit(limit)
     bullets = [
-        f"- chunk {number} of document {document_name}"
-        f'{_provenance_suffix(data_id, chunk_id)}: "{_snippet(text)}"'
-        for _, document_name, number, text, data_id, chunk_id in candidates[:max_bullets]
+        f"- chunk {candidate.number} of document {candidate.document_name}"
+        f"{candidate.location_suffix}"
+        f"{_provenance_suffix(candidate.data_id, candidate.chunk_id)}: "
+        f'"{_snippet(candidate.text)}"'
+        for candidate in candidates[:max_bullets]
     ]
 
     return EVIDENCE_HEADER + "\n" + "\n".join(bullets)

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const localApiUrl = process.env.NEXT_PUBLIC_LOCAL_API_URL || "http://localhost:8000";
+// Server-side only, so read at RUNTIME (no NEXT_PUBLIC_ prefix = not inlined
+// at build). In Kubernetes this points at the in-cluster Service.
+const localApiUrl = process.env.BACKEND_API_URL || "http://localhost:8000";
 
 // Proxies the cognee /v1/schema/provenance HTML view (memory-provenance graph:
 // Tenant -> User -> Agent -> Brain -> File -> memory) so it can be embedded in

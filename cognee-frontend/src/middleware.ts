@@ -17,7 +17,11 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
-  ],
+  // Vendoring deviation from upstream: match only "/" — the sole path this
+  // middleware acts on — so it no longer runs for API/asset requests.
+  // NOTE: this does NOT exempt proxied bodies from the router's 10MB buffer
+  // cap (that applies whenever a middleware file exists, matcher or not);
+  // the cap itself is raised via experimental.proxyClientMaxBodySize in
+  // next.config.mjs.
+  matcher: ["/"],
 };

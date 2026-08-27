@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const localApiUrl = process.env.NEXT_PUBLIC_LOCAL_API_URL || "http://localhost:8000";
+// Server-side only, so read at RUNTIME (no NEXT_PUBLIC_ prefix = not inlined
+// at build). In Kubernetes this points at the in-cluster Service
+// (http://cognee-api:8000, set on the Deployment).
+const localApiUrl = process.env.BACKEND_API_URL || "http://localhost:8000";
 
 export async function GET(request: NextRequest) {
   const datasetId = request.nextUrl.searchParams.get("dataset_id");

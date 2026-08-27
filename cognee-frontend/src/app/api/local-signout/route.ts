@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-const localApiUrl = process.env.NEXT_PUBLIC_LOCAL_API_URL || "http://localhost:8000";
+// Server-side only, so read at RUNTIME (no NEXT_PUBLIC_ prefix = not inlined
+// at build). In Kubernetes this points at the in-cluster Service.
+const localApiUrl = process.env.BACKEND_API_URL || "http://localhost:8000";
 
 export async function GET(request: Request) {
   // Call the local backend's logout endpoint to invalidate the session

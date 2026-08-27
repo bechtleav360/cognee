@@ -4,8 +4,6 @@ import { useState } from "react";
 import { Flex, Text, Title, TextInput, PasswordInput, Button } from "@mantine/core";
 import AuthCard from "@/ui/elements/Auth/AuthCard";
 
-const localApiUrl = process.env.NEXT_PUBLIC_LOCAL_API_URL || "http://localhost:8000";
-
 const DEFAULT_EMAIL = "default_user@example.com";
 const DEFAULT_PASSWORD = "default_password";
 
@@ -25,7 +23,9 @@ export default function LocalSignInForm() {
       formData.append("username", email);
       formData.append("password", password);
 
-      const response = await global.fetch(`${localApiUrl}/api/v1/auth/login`, {
+      // Same-origin: routed to the API by the k8s router or the
+      // next.config.mjs rewrites (in `next dev`).
+      const response = await global.fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: formData.toString(),
@@ -52,7 +52,7 @@ export default function LocalSignInForm() {
     } catch (err) {
       if (err instanceof TypeError) {
         setError(
-          "Cannot connect to local backend at " + localApiUrl + ". Is it running?"
+          "Cannot connect to the local backend. Is it running?"
         );
       } else {
         setError("Something went wrong. Please try again.");

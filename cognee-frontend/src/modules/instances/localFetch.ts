@@ -1,7 +1,5 @@
 import handleServerErrors from "@/utils/handleServerErrors";
 
-const localApiUrl = process.env.NEXT_PUBLIC_LOCAL_API_URL || "http://localhost:8000";
-
 let apiKey: string | null = process.env.NEXT_PUBLIC_COGWIT_API_KEY || null;
 
 export default async function localFetch(url: URL | RequestInfo, options: RequestInit = {}): Promise<Response> {
@@ -13,13 +11,16 @@ export default async function localFetch(url: URL | RequestInfo, options: Reques
   // The local backend mounts API routes under /api/v1.
   // Most component paths arrive as "/v1/datasets/" etc., but some (like
   // "/configuration/...") omit the version prefix. Default those to /v1.
+  // URLs are same-origin relative: in Kubernetes the router path-splits
+  // /api/v1, /health etc. to the API Service; in `next dev` the rewrites in
+  // next.config.mjs proxy them to the local backend.
   let urlStr = typeof url === "string" ? url : url.toString();
   if (!urlStr.startsWith("/")) {
     urlStr = `/${urlStr}`;
   }
   const fullUrl = urlStr === "/health" || urlStr.startsWith("/health?")
-    ? localApiUrl + urlStr
-    : localApiUrl + "/api" + (/^\/v\d+(\/|\?|$)/.test(urlStr) ? urlStr : "/v1" + urlStr);
+    ? urlStr
+    : "/api" + (/^\/v\d+(\/|\?|$)/.test(urlStr) ? urlStr : "/v1" + urlStr);
   const method = options.method || "GET";
 
   console.log(`[LOCAL-API] → ${method} ${fullUrl}`);

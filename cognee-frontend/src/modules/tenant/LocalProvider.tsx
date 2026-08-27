@@ -5,12 +5,18 @@ import { Tenant } from "./types";
 import { TenantContext, localInstance } from "./TenantContext";
 import { tokens } from "@/ui/theme/tokens";
 
-const localApiUrl = process.env.NEXT_PUBLIC_LOCAL_API_URL || "http://localhost:8000";
-
 export function LocalProvider({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Public API base = this page's own origin (the router path-splits /api/v1
+  // to the backend). Set in an effect, not at render time, so the server
+  // render and the first client render agree (no hydration mismatch).
+  const [serviceUrl, setServiceUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setServiceUrl(window.location.origin);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,8 +29,9 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        // Check if we're authenticated with the local backend
-        const meResponse = await global.fetch(`${localApiUrl}/api/v1/users/me`, {
+        // Check if we're authenticated with the local backend (same-origin;
+        // routed to the API by the k8s router or the next.config.mjs rewrites)
+        const meResponse = await global.fetch("/api/v1/users/me", {
           credentials: "include",
         });
 
@@ -47,7 +54,7 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
 
         // Network error — backend probably not running
         if (err instanceof TypeError) {
-          setError("Cannot connect to local Cognee backend at " + localApiUrl + ". Is it running?");
+          setError("Cannot connect to the local Cognee backend. Is it running?");
         } else {
           const message = err instanceof Error ? err.message : "Failed to connect to local backend";
           setError(message);
@@ -77,7 +84,7 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
       tenant,
       cogniInstance: localInstance,
       localInstance,
-      serviceUrl: localApiUrl,
+      serviceUrl,
       apiKey: "",
       isInitializing,
       tenantReady: true,

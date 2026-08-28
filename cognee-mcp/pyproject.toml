@@ -67,6 +67,19 @@ explicit = true
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+# cognee-mcp lives inside the cognee repository, one directory below the project it
+# depends on. Without this, `uv sync` here installs the published release and any
+# local change under cognee/** is silently absent from the environment and from built
+# images -- so the MCP image can ship a different cognee than the API image built
+# from the very same commit.
+#
+# uv sources are a development-time resolution mechanism: they are not written into
+# wheel metadata, so a published cognee-mcp still declares the PyPI dependency above.
+#
+# editable = false so the environment holds a built copy rather than a link to the
+# source tree -- the image must not depend on a path that only exists at build time.
+# The build context is therefore the repository root, not cognee-mcp/.
+cognee = { path = "..", editable = false }
 
 [tool.uv]
 # onnxruntime is pulled in transitively via cognee[docs] -> unstructured.

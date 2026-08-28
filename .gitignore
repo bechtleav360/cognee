@@ -210,3 +210,12 @@ cognee/tests/performance/results
 
 # Local `helm template` output — generated, not checked in
 rendered.yaml
+
+# --- SLM/LoRA experiment artifacts (experiment/slm-lora) -------------------
+# Adapters are roughly a gigabyte each; datasets and eval dumps grow fast.
+# Commit the manifests and the adapter registry instead -- they are small,
+# diffable, and are what actually makes a run reproducible.
+adapters/
+datasets/slm/
+eval_dumps/
+*.safetensors

@@ -19,7 +19,7 @@ when there is nothing usable, and never raise on backend failures.
 """
 
 import re
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, List, NamedTuple, Optional, Set
 
 from cognee.shared.logging_utils import get_logger
 
@@ -131,6 +131,23 @@ def _get_payload(obj: Any) -> Optional[dict]:
     if isinstance(payload, dict):
         return payload
     return None
+
+
+class _Candidate(NamedTuple):
+    """One chunk eligible to become an Evidence bullet.
+
+    Named rather than a positional tuple: the bullet is assembled from six
+    different fields, and a positional unpack at that width is where a future
+    field lands in the wrong slot without anything failing.
+    """
+
+    score: int
+    document_name: str
+    number: int
+    text: str
+    data_id: Optional[str]
+    chunk_id: Optional[str]
+    location_suffix: str
 
 
 def _page_suffix(payload: dict) -> str:
@@ -258,8 +275,7 @@ def format_chunk_references(
             # rather than presenting unverifiable retrieval order as provenance.
             return ""
 
-    # (overlap_score, document_name, number, text, data_id, chunk_id, location_suffix) per candidate.
-    candidates: List[Tuple[int, str, int, str, Optional[str], Optional[str], str]] = []
+    candidates: List[_Candidate] = []
     seen: set = set()
 
     for obj in iterator:
@@ -282,7 +298,6 @@ def format_chunk_references(
         # Document.id = data.id), i.e. the dataId a caller needs to map a
         # citation back to the document they ingested.
         data_id = _clean_str(payload.get("document_id"))
-        location_suffix = _location_suffix(payload)
 
         dedup_key = chunk_id or f"{document_name}#{number}"
         if dedup_key in seen:
@@ -298,22 +313,32 @@ def format_chunk_references(
                 # certainly not a source of the answer.
                 continue
 
-        candidates.append((score, document_name, number, text, data_id, chunk_id, location_suffix))
+        candidates.append(
+            _Candidate(
+                score=score,
+                document_name=document_name,
+                number=number,
+                text=text,
+                data_id=data_id,
+                chunk_id=chunk_id,
+                location_suffix=_location_suffix(payload),
+            )
+        )
 
     if not candidates:
         return ""
 
     if answer_terms is not None:
         # Stable sort: highest answer overlap first, retrieval order as tiebreak.
-        candidates.sort(key=lambda candidate: -candidate[0])
+        candidates.sort(key=lambda candidate: -candidate.score)
 
     max_bullets = _clamp_limit(limit)
     bullets = [
-        f"- chunk {number} of document {document_name}{location_suffix}"
-        f'{_provenance_suffix(data_id, chunk_id)}: "{_snippet(text)}"'
-        for _, document_name, number, text, data_id, chunk_id, location_suffix in candidates[
-            :max_bullets
-        ]
+        f"- chunk {candidate.number} of document {candidate.document_name}"
+        f"{candidate.location_suffix}"
+        f"{_provenance_suffix(candidate.data_id, candidate.chunk_id)}: "
+        f'"{_snippet(candidate.text)}"'
+        for candidate in candidates[:max_bullets]
     ]
 
     return EVIDENCE_HEADER + "\n" + "\n".join(bullets)

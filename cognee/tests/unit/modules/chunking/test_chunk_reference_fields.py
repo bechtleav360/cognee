@@ -236,3 +236,29 @@ async def test_chunk_section_none_when_source_has_no_headings(chunker_class):
     assert len(chunks) >= 1
     for chunk in chunks:
         assert chunk.section is None
+
+
+@pytest.mark.asyncio
+async def test_page_and_section_are_never_embedded(chunker_class):
+    """The locator fields are provenance, not content: they must stay out of index_fields.
+
+    Nothing fails if they leak in -- the chunk is simply embedded together with a
+    page number, which quietly degrades every similarity score for that chunk.
+    """
+    document = Document(
+        id=uuid4(),
+        name="report.pdf",
+        raw_data_location="/abs/path/to/report.pdf",
+        external_metadata=None,
+        mime_type="text/plain",
+    )
+    text = "Page 1:\n" + " ".join(f"Sentence {i}." for i in range(12)) + "\n# Heading\nBody."
+    chunker = chunker_class(document, _make_text_generator(text), max_chunk_size=64)
+    chunks = await _collect(chunker)
+
+    assert chunks
+    for chunk in chunks:
+        assert chunk.metadata["index_fields"] == ["text"]
+        assert "page_start" not in chunk.metadata["index_fields"]
+        assert "page_end" not in chunk.metadata["index_fields"]
+        assert "section" not in chunk.metadata["index_fields"]

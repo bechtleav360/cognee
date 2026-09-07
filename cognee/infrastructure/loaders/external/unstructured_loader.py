@@ -107,7 +107,7 @@ class UnstructuredLoader(LoaderInterface):
 
             # Process elements into text content. Prefix a "Page N:" marker
             # (same convention as PyPdfLoader/AdvancedPdfLoader) whenever the
-            # page number changes, so page_markers.stamp_page_range() can
+            # page number changes, so the chunkers' PageTracker can
             # recover page_start/page_end downstream regardless of source
             # format. unstructured populates element.metadata.page_number for
             # many formats (e.g. it's the slide index for pptx); it's often

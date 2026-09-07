@@ -1,75 +1,120 @@
-"""Unit tests for stamp_section_heading(): turning Markdown ATX headings into
-a structured section breadcrumb, with heading state carried across chunks
-that introduce no heading of their own (mirrors test_page_markers.py).
+"""Unit tests for SectionTracker, which recovers a heading breadcrumb from Markdown.
+
+Pure logic over strings: no loader, no chunker, no I/O. The chunker-side wiring
+is covered separately in test_chunk_page_fields.py.
 """
 
-from cognee.modules.chunking.section_markers import stamp_section_heading
+from cognee.modules.chunking.section_markers import SectionTracker
 
 
-def test_no_heading_and_no_running_state_yields_none():
-    """Plain prose with no Markdown headings anywhere -- e.g. most real PDFs."""
-    breadcrumb, headings = stamp_section_heading("Just some plain prose text.", {})
-    assert breadcrumb is None
-    assert headings == {}
+class TestWithoutHeadings:
+    def test_a_source_with_no_headings_never_gets_a_section(self):
+        """Pasted text has no structure to cite; an invented one would be worse than none."""
+        tracker = SectionTracker()
+
+        assert tracker.stamp("Some prose with no heading at all.") is None
+        assert tracker.stamp("More prose.") is None
+
+    def test_a_document_preamble_before_the_first_heading_has_no_section(self):
+        """Text above the first heading belongs to no section yet."""
+        tracker = SectionTracker()
+
+        assert tracker.stamp("Intro paragraph.") is None
+
+    def test_a_hash_that_is_not_a_heading_is_ignored(self):
+        """Only the ATX form counts: hashes mid-line, or without a space, are prose."""
+        tracker = SectionTracker()
+
+        assert tracker.stamp("Issue #42 is fixed.") is None
+        assert tracker.stamp("#nospace is a tag, not a heading") is None
+
+    def test_more_than_six_hashes_is_not_a_heading(self):
+        """Markdown caps ATX headings at six levels."""
+        tracker = SectionTracker()
+
+        assert tracker.stamp("####### Seven hashes") is None
 
 
-def test_single_top_level_heading():
-    text = "# PMflex Projektmanagement\n\nSome introductory text."
-    breadcrumb, headings = stamp_section_heading(text, {})
-    assert breadcrumb == "PMflex Projektmanagement"
-    assert headings == {1: "PMflex Projektmanagement"}
+class TestSingleLevel:
+    def test_a_chunk_introducing_a_heading_takes_it(self):
+        tracker = SectionTracker()
+
+        assert tracker.stamp("# Introduction\nSome text.") == "Introduction"
+
+    def test_a_later_heading_at_the_same_level_replaces_the_earlier_one(self):
+        """Sibling sections do not accumulate."""
+        tracker = SectionTracker()
+        tracker.stamp("# Introduction\n")
+
+        assert tracker.stamp("# Methods\nText.") == "Methods"
+
+    def test_the_last_heading_in_a_chunk_wins(self):
+        """The breadcrumb describes where the chunk ends, matching PageTracker's page_end."""
+        tracker = SectionTracker()
+
+        assert tracker.stamp("# First\ntext\n# Second\nmore") == "Second"
 
 
-def test_nested_heading_builds_breadcrumb():
-    text = "## 1 PMflex-Projektmanagement als Teil des PMflex-Systems\n\nBody text."
-    breadcrumb, headings = stamp_section_heading(text, {1: "PMflex Projektmanagement"})
-    assert breadcrumb == "PMflex Projektmanagement > 1 PMflex-Projektmanagement als Teil des PMflex-Systems"
+class TestCarryForward:
+    def test_a_chunk_without_a_heading_inherits_the_last_one(self):
+        """The whole point: most chunks contain no heading of their own."""
+        tracker = SectionTracker()
+        tracker.stamp("## Setup\n")
+
+        assert tracker.stamp("Continued prose.") == "Setup"
+        assert tracker.stamp("Still more prose.") == "Setup"
+
+    def test_each_document_starts_clean(self):
+        """One tracker per document; a fresh tracker must not inherit anything."""
+        first = SectionTracker()
+        first.stamp("# Doc One")
+
+        assert SectionTracker().stamp("Plain text.") is None
 
 
-def test_no_heading_in_chunk_inherits_running_state():
-    """A chunk entirely within one section (heading landed in a previous chunk)."""
-    breadcrumb, headings = stamp_section_heading(
-        "More body text with no heading at all.",
-        {1: "PMflex Projektmanagement", 2: "1 Einleitung"},
-    )
-    assert breadcrumb == "PMflex Projektmanagement > 1 Einleitung"
-    assert headings == {1: "PMflex Projektmanagement", 2: "1 Einleitung"}
+class TestNesting:
+    def test_levels_nest_into_a_breadcrumb(self):
+        tracker = SectionTracker()
+
+        assert tracker.stamp("# Guide\n## Install\n### Linux\n") == "Guide > Install > Linux"
+
+    def test_a_shallower_heading_closes_the_deeper_ones(self):
+        """A new H2 ends the H3 that belonged to the previous subsection."""
+        tracker = SectionTracker()
+        tracker.stamp("# Guide\n## Install\n### Linux\n")
+
+        assert tracker.stamp("## Usage\n") == "Guide > Usage"
+
+    def test_a_skipped_level_is_kept_as_authored(self):
+        """H1 straight to H3 is legal Markdown; the breadcrumb reports what is there."""
+        tracker = SectionTracker()
+
+        assert tracker.stamp("# Top\n### Deep\n") == "Top > Deep"
+
+    def test_the_top_level_survives_a_deeper_replacement(self):
+        tracker = SectionTracker()
+        tracker.stamp("# Guide\n## Install\n")
+
+        assert tracker.stamp("## Usage\n") == "Guide > Usage"
 
 
-def test_new_heading_at_shallower_level_clears_deeper_ones():
-    """A new H1 ends whatever H2/H3 subsection was previously active."""
-    text = "# Chapter Two\n\nStarts fresh."
-    breadcrumb, headings = stamp_section_heading(
-        text, {1: "Chapter One", 2: "1.1 Details", 3: "1.1.1 Fine print"}
-    )
-    assert breadcrumb == "Chapter Two"
-    assert headings == {1: "Chapter Two"}
+class TestHeadingText:
+    def test_surrounding_whitespace_is_stripped(self):
+        tracker = SectionTracker()
 
+        assert tracker.stamp("#    Spaced   Heading   \n") == "Spaced Heading"
 
-def test_new_heading_at_same_level_replaces_sibling():
-    text = "## 2 Second Section\n\nBody."
-    breadcrumb, headings = stamp_section_heading(text, {1: "Part One", 2: "1 First Section"})
-    assert breadcrumb == "Part One > 2 Second Section"
-    assert headings == {1: "Part One", 2: "2 Second Section"}
+    def test_a_long_heading_is_clipped(self):
+        """One runaway heading must not dominate the citation line."""
+        tracker = SectionTracker()
+        long_heading = "A" * 200
 
+        result = tracker.stamp(f"# {long_heading}\n")
 
-def test_multiple_headings_in_one_chunk_ends_on_the_last():
-    text = "# Title\n\n## Sub A\n\nShort.\n\n## Sub B\n\nAlso short."
-    breadcrumb, headings = stamp_section_heading(text, {})
-    assert breadcrumb == "Title > Sub B"
+        assert len(result) == 80
+        assert result.endswith("…")
 
+    def test_a_tab_after_the_hashes_is_accepted(self):
+        tracker = SectionTracker()
 
-def test_heading_not_on_its_own_line_does_not_match():
-    """A '#' inside a sentence (e.g. a hashtag or issue reference) is not a heading."""
-    text = "See issue #42 for details, not a real heading."
-    breadcrumb, headings = stamp_section_heading(text, {})
-    assert breadcrumb is None
-    assert headings == {}
-
-
-def test_long_heading_text_is_clipped():
-    long_heading = "# " + ("Very long heading text " * 10)
-    breadcrumb, _ = stamp_section_heading(long_heading, {})
-    assert breadcrumb is not None
-    assert len(breadcrumb) <= 81  # _MAX_HEADING_CHARS + ellipsis
-    assert breadcrumb.endswith("…")
+        assert tracker.stamp("#\tTabbed\n") == "Tabbed"

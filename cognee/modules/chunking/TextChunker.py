@@ -4,8 +4,8 @@ from uuid import NAMESPACE_OID, uuid5
 
 from cognee.tasks.chunks import chunk_by_paragraph
 from cognee.modules.chunking.Chunker import Chunker
-from cognee.modules.chunking.page_markers import stamp_page_range
-from cognee.modules.chunking.section_markers import stamp_section_heading
+from cognee.modules.chunking.page_markers import PageTracker
+from cognee.modules.chunking.section_markers import SectionTracker
 from .models.DocumentChunk import DocumentChunk
 
 logger = get_logger()
@@ -16,8 +16,11 @@ class TextChunker(Chunker):
         document_id = str(self.document.id)
         document_name = self.document.name or basename(self.document.raw_data_location)
         paragraph_chunks = []
-        current_page = None
-        current_headings = {}
+        # One tracker per document: it carries the current page across chunks that
+        # contain no marker of their own.
+        page_tracker = PageTracker()
+        # Sibling of page_tracker: the fallback for sources with no pagination.
+        section_tracker = SectionTracker()
         async for content_text in self.get_text():
             for chunk_data in chunk_by_paragraph(
                 content_text,
@@ -29,12 +32,8 @@ class TextChunker(Chunker):
                     self.chunk_size += chunk_data["chunk_size"]
                 else:
                     if len(paragraph_chunks) == 0:
-                        page_start, page_end, current_page = stamp_page_range(
-                            chunk_data["text"], current_page
-                        )
-                        section, current_headings = stamp_section_heading(
-                            chunk_data["text"], current_headings
-                        )
+                        page_start, page_end = page_tracker.stamp(chunk_data["text"])
+                        section = section_tracker.stamp(chunk_data["text"])
                         yield DocumentChunk(
                             id=chunk_data["chunk_id"],
                             text=chunk_data["text"],
@@ -57,12 +56,8 @@ class TextChunker(Chunker):
                         self.chunk_size = 0
                     else:
                         chunk_text = " ".join(chunk["text"] for chunk in paragraph_chunks)
-                        page_start, page_end, current_page = stamp_page_range(
-                            chunk_text, current_page
-                        )
-                        section, current_headings = stamp_section_heading(
-                            chunk_text, current_headings
-                        )
+                        page_start, page_end = page_tracker.stamp(chunk_text)
+                        section = section_tracker.stamp(chunk_text)
                         try:
                             yield DocumentChunk(
                                 id=uuid5(
@@ -94,8 +89,8 @@ class TextChunker(Chunker):
 
         if len(paragraph_chunks) > 0:
             final_text = " ".join(chunk["text"] for chunk in paragraph_chunks)
-            page_start, page_end, current_page = stamp_page_range(final_text, current_page)
-            section, current_headings = stamp_section_heading(final_text, current_headings)
+            page_start, page_end = page_tracker.stamp(final_text)
+            section = section_tracker.stamp(final_text)
             try:
                 yield DocumentChunk(
                     id=uuid5(NAMESPACE_OID, f"{str(self.document.id)}-{self.chunk_index}"),

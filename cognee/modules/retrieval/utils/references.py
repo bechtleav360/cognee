@@ -136,7 +136,7 @@ def _get_payload(obj: Any) -> Optional[dict]:
 def _page_suffix(payload: dict) -> str:
     """Render a ', page N' / ', page N-M' annotation, or '' when not derivable.
 
-    Reads page_start/page_end as set by page_markers.stamp_page_range() during
+    Reads page_start/page_end as stamped by chunking/page_markers.py during
     chunking. Both are None when the source format/loader couldn't determine a
     page (e.g. plain pasted text) -- in that case no page is rendered, rather
     than fabricating one.
@@ -153,7 +153,7 @@ def _page_suffix(payload: dict) -> str:
 def _section_suffix(payload: dict) -> str:
     """Render a ', section: <breadcrumb>' annotation, or '' when absent.
 
-    Reads the section breadcrumb set by section_markers.stamp_section_heading()
+    Reads the section breadcrumb stamped by chunking/section_markers.py
     during chunking -- a fallback for sources with no page/slide numbers (e.g.
     plain Markdown/text) that nonetheless have real heading structure.
     """

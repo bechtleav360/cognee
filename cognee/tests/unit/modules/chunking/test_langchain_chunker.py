@@ -115,3 +115,89 @@ async def test_read_raises_for_chunks_over_max_chunk_size():
     ):
         with pytest.raises(ValueError, match="larger than the maximum"):
             [chunk async for chunk in chunker.read()]
+
+
+def _paged_text(pages: int, words_per_page: int = 40) -> str:
+    """Mimic a paginating loader's output: a "Page N:" line, then that page's body."""
+    return "\n".join(
+        f"Page {number}:\n" + " ".join(f"word{index}" for index in range(words_per_page))
+        for number in range(1, pages + 1)
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_stamps_the_page_every_chunk_belongs_to():
+    """A chunk with no marker of its own still belongs to the last page seen."""
+    document = _make_document()
+
+    async def get_text():
+        yield _paged_text(pages=3)
+
+    # A chunk size well below one page, so most chunks contain no marker at all.
+    chunker = LangchainChunker(
+        document, max_chunk_size=512, get_text=get_text, chunk_size=15, chunk_overlap=0
+    )
+
+    with patch(
+        "cognee.modules.chunking.LangchainChunker.get_vector_engine_async",
+        return_value=_mock_vector_engine(),
+    ):
+        chunks = [chunk async for chunk in chunker.read()]
+
+    assert len(chunks) > 3, "expected the text to split into more chunks than it has pages"
+    assert all(chunk.page_start is not None for chunk in chunks)
+    assert all(chunk.page_end is not None for chunk in chunks)
+    # Pages only ever advance, and every page of the source is represented.
+    pages = [chunk.page_end for chunk in chunks]
+    assert pages == sorted(pages)
+    assert set(pages) == {1, 2, 3}
+
+
+@pytest.mark.asyncio
+async def test_read_stamps_the_heading_breadcrumb_when_there_are_no_pages():
+    """Markdown has no pages, so the nearest heading path is the locator instead."""
+    document = _make_document()
+    body = " ".join(f"word{index}" for index in range(40))
+
+    async def get_text():
+        yield f"# Guide\n{body}\n## Install\n{body}\n### Linux\n{body}"
+
+    chunker = LangchainChunker(
+        document, max_chunk_size=512, get_text=get_text, chunk_size=15, chunk_overlap=0
+    )
+
+    with patch(
+        "cognee.modules.chunking.LangchainChunker.get_vector_engine_async",
+        return_value=_mock_vector_engine(),
+    ):
+        chunks = [chunk async for chunk in chunker.read()]
+
+    assert all(chunk.page_start is None for chunk in chunks)
+    sections = [chunk.section for chunk in chunks if chunk.section]
+    assert sections, "expected at least one chunk to carry a section"
+    assert sections[0] == "Guide"
+    assert sections[-1] == "Guide > Install > Linux"
+
+
+@pytest.mark.asyncio
+async def test_read_invents_neither_page_nor_section_for_plain_text():
+    document = _make_document()
+
+    async def get_text():
+        yield " ".join(f"word{index}" for index in range(60))
+
+    chunker = LangchainChunker(
+        document, max_chunk_size=512, get_text=get_text, chunk_size=15, chunk_overlap=0
+    )
+
+    with patch(
+        "cognee.modules.chunking.LangchainChunker.get_vector_engine_async",
+        return_value=_mock_vector_engine(),
+    ):
+        chunks = [chunk async for chunk in chunker.read()]
+
+    assert chunks
+    for chunk in chunks:
+        assert chunk.page_start is None
+        assert chunk.page_end is None
+        assert chunk.section is None

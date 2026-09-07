@@ -68,8 +68,12 @@ class _FakeClient:
         self.captured = None
         self.dataset_requests = 0
 
-    async def get(self, url, headers=None):
-        """Serve list_datasets(); recall()'s no-scope fallback calls this first."""
+    async def get(self, url, headers=None, timeout=None):
+        """Serve list_datasets(); recall()'s no-scope fallback calls this first.
+
+        Accepts `timeout` because list_datasets() passes READ_TIMEOUT_SECONDS: a fake that
+        omits it raises TypeError before the stream under test is ever reached.
+        """
         self.dataset_requests += 1
         return _FakeResponse({}, json_body=self._datasets)
 

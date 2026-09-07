@@ -105,7 +105,7 @@ async def test_format_helper_renders_one_based_number_from_real_chunk(chunker_cl
 
 @pytest.mark.asyncio
 async def test_chunk_page_start_end_derived_from_page_markers(chunker_class):
-    """"Page N:" markers embedded in the source text (as emitted by
+    """ "Page N:" markers embedded in the source text (as emitted by
     PyPdfLoader/AdvancedPdfLoader/UnstructuredLoader) are recovered as
     structured page_start/page_end on each produced chunk, in order."""
     document = Document(
@@ -151,7 +151,9 @@ async def test_chunk_page_fields_none_when_source_has_no_page_markers(chunker_cl
         mime_type="text/plain",
     )
     chunker = chunker_class(
-        document, _make_text_generator("Just plain pasted text with no pages at all."), max_chunk_size=512
+        document,
+        _make_text_generator("Just plain pasted text with no pages at all."),
+        max_chunk_size=512,
     )
     chunks = await _collect(chunker)
 
@@ -229,7 +231,9 @@ async def test_chunk_section_none_when_source_has_no_headings(chunker_class):
         mime_type="text/plain",
     )
     chunker = chunker_class(
-        document, _make_text_generator("Just plain pasted text with no structure at all."), max_chunk_size=512
+        document,
+        _make_text_generator("Just plain pasted text with no structure at all."),
+        max_chunk_size=512,
     )
     chunks = await _collect(chunker)
 

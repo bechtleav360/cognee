@@ -1,4 +1,5 @@
 from cognee.infrastructure.databases.graph import get_graph_engine
+from cognee.modules.recall.progress import progress_dataset
 from cognee.modules.retrieval.session_aware_completion import run_session_aware_completion
 from cognee.modules.search.methods.get_search_type_retriever_instance import (
     get_search_type_retriever_instance,
@@ -65,13 +66,19 @@ async def get_retriever_output(
     )
 
     only_context = kwargs.get("only_context", False)
-    retrieved_objects, context, completion = await run_session_aware_completion(
-        retriever_instance,
-        raw_query=query_text,
-        original_search_type=query_type,
-        only_context=only_context,
-        search_type_for_spans=effective_query_type,
-    )
+
+    # The graph_retrieval / llm_generation stage events fire inside
+    # run_session_aware_completion, which is where those boundaries now live. Binding the
+    # dataset here tags their detail and any error attribution without growing its signature.
+    dataset = kwargs.get("dataset")
+    with progress_dataset(dataset.name if dataset else None):
+        retrieved_objects, context, completion = await run_session_aware_completion(
+            retriever_instance,
+            raw_query=query_text,
+            original_search_type=query_type,
+            only_context=only_context,
+            search_type_for_spans=effective_query_type,
+        )
     return SearchResultPayload(
         result_object=retrieved_objects,
         context=context,

@@ -34,6 +34,7 @@ from cognee.modules.observability import (
     COGNEE_SEARCH_TYPE,
     new_span,
 )
+from cognee.modules.recall.progress import attach_stage, emit, stage_detail
 from cognee.modules.retrieval.utils.access_tracking import update_node_access_timestamps
 from cognee.modules.search.types import SearchType
 from cognee.modules.user_preferences import warm_preference_cache
@@ -239,51 +240,62 @@ async def _retrieve_and_answer(
 ) -> tuple[Any, Any, Any]:
     retriever_class = _retriever_class_name(retriever)
 
-    with new_span("cognee.retrieval.get_objects") as span:
-        span.set_attribute("cognee.retrieval.retriever", retriever_class)
-        if search_type_for_spans is not None:
-            span.set_attribute(COGNEE_SEARCH_TYPE, search_type_for_spans.value)
-        retrieved_objects = await _retrieve_merged_objects(
-            retriever, raw_query=raw_query, snapshot=snapshot
-        )
-        obj_count = count_retrieved_objects(retrieved_objects)
-        span.set_attribute(COGNEE_RESULT_COUNT, obj_count)
-        span.set_attribute(
-            COGNEE_RESULT_SUMMARY,
-            f"{retriever_class} retrieved {obj_count} object(s)",
-        )
+    try:
+        with new_span("cognee.retrieval.get_objects") as span:
+            span.set_attribute("cognee.retrieval.retriever", retriever_class)
+            if search_type_for_spans is not None:
+                span.set_attribute(COGNEE_SEARCH_TYPE, search_type_for_spans.value)
+            retrieved_objects = await _retrieve_merged_objects(
+                retriever, raw_query=raw_query, snapshot=snapshot
+            )
+            obj_count = count_retrieved_objects(retrieved_objects)
+            span.set_attribute(COGNEE_RESULT_COUNT, obj_count)
+            span.set_attribute(
+                COGNEE_RESULT_SUMMARY,
+                f"{retriever_class} retrieved {obj_count} object(s)",
+            )
 
-    with new_span("cognee.retrieval.get_context") as span:
-        span.set_attribute("cognee.retrieval.retriever", retriever_class)
-        context = await retriever.get_context_from_objects(
-            query=raw_query,
-            retrieved_objects=retrieved_objects,
-        )
-        if isinstance(context, str):
-            span.set_attribute("cognee.retrieval.context_length", len(context))
-        elif isinstance(context, list):
-            span.set_attribute("cognee.retrieval.context_items", len(context))
+        with new_span("cognee.retrieval.get_context") as span:
+            span.set_attribute("cognee.retrieval.retriever", retriever_class)
+            context = await retriever.get_context_from_objects(
+                query=raw_query,
+                retrieved_objects=retrieved_objects,
+            )
+            if isinstance(context, str):
+                span.set_attribute("cognee.retrieval.context_length", len(context))
+            elif isinstance(context, list):
+                span.set_attribute("cognee.retrieval.context_items", len(context))
+    except Exception as exc:
+        attach_stage(exc, "graph_retrieval")
+        raise
 
-    with new_span("cognee.retrieval.get_completion") as span:
-        span.set_attribute("cognee.retrieval.retriever", retriever_class)
-        answer = await complete_turn(
-            snapshot=snapshot,
-            context=context,
-            user_id=user_uuid,
-            session_id=session_id,
-            prompts=TurnPrompts(
-                user_prompt_path=retriever.user_prompt_path,
-                system_prompt_path=retriever.system_prompt_path,
-                system_prompt=retriever.system_prompt,
-                response_model=retriever.response_model,
-            ),
-        )
-        if isinstance(answer, str):
-            span.set_attribute("cognee.retrieval.completion_length", len(answer))
-        span.set_attribute(
-            COGNEE_RESULT_SUMMARY,
-            f"{retriever_class} generated completion",
-        )
+    await emit("graph_retrieval", "completed", stage_detail(object_count=obj_count))
+    await emit("llm_generation", "started", stage_detail())
+
+    try:
+        with new_span("cognee.retrieval.get_completion") as span:
+            span.set_attribute("cognee.retrieval.retriever", retriever_class)
+            answer = await complete_turn(
+                snapshot=snapshot,
+                context=context,
+                user_id=user_uuid,
+                session_id=session_id,
+                prompts=TurnPrompts(
+                    user_prompt_path=retriever.user_prompt_path,
+                    system_prompt_path=retriever.system_prompt_path,
+                    system_prompt=retriever.system_prompt,
+                    response_model=retriever.response_model,
+                ),
+            )
+            if isinstance(answer, str):
+                span.set_attribute("cognee.retrieval.completion_length", len(answer))
+            span.set_attribute(
+                COGNEE_RESULT_SUMMARY,
+                f"{retriever_class} generated completion",
+            )
+    except Exception as exc:
+        attach_stage(exc, "llm_generation")
+        raise
 
     return retrieved_objects, context, answer
 
@@ -364,53 +376,69 @@ async def run_sequential_session_turn(
             return None, None, [turn_preparation.response_to_user or "Got it."]
         effective_query = turn_preparation.effective_query or raw_query
 
-    with new_span("cognee.retrieval.get_objects") as span:
-        span.set_attribute("cognee.retrieval.retriever", retriever_class)
-        if search_type_for_spans is not None:
-            span.set_attribute(COGNEE_SEARCH_TYPE, search_type_for_spans.value)
-        retrieved_objects = await retriever.get_retrieved_objects(query=effective_query)
-        obj_count = count_retrieved_objects(retrieved_objects)
-        span.set_attribute(COGNEE_RESULT_COUNT, obj_count)
-        span.set_attribute(
-            COGNEE_RESULT_SUMMARY,
-            f"{retriever_class} retrieved {obj_count} object(s)",
-        )
+    # graph_retrieval stage: object retrieval + context extraction. Never reached on the early
+    # session-turn answer path, which returns above.
+    try:
+        with new_span("cognee.retrieval.get_objects") as span:
+            span.set_attribute("cognee.retrieval.retriever", retriever_class)
+            if search_type_for_spans is not None:
+                span.set_attribute(COGNEE_SEARCH_TYPE, search_type_for_spans.value)
+            retrieved_objects = await retriever.get_retrieved_objects(query=effective_query)
+            obj_count = count_retrieved_objects(retrieved_objects)
+            span.set_attribute(COGNEE_RESULT_COUNT, obj_count)
+            span.set_attribute(
+                COGNEE_RESULT_SUMMARY,
+                f"{retriever_class} retrieved {obj_count} object(s)",
+            )
 
-    if retrieved_objects:
-        await update_node_access_timestamps(retrieved_objects)
+        if retrieved_objects:
+            await update_node_access_timestamps(retrieved_objects)
 
-    with new_span("cognee.retrieval.get_context") as span:
-        span.set_attribute("cognee.retrieval.retriever", retriever_class)
-        context = await retriever.get_context_from_objects(
-            query=effective_query, retrieved_objects=retrieved_objects
-        )
-        if isinstance(context, str):
-            span.set_attribute("cognee.retrieval.context_length", len(context))
-        elif isinstance(context, list):
-            span.set_attribute("cognee.retrieval.context_items", len(context))
+        with new_span("cognee.retrieval.get_context") as span:
+            span.set_attribute("cognee.retrieval.retriever", retriever_class)
+            context = await retriever.get_context_from_objects(
+                query=effective_query, retrieved_objects=retrieved_objects
+            )
+            if isinstance(context, str):
+                span.set_attribute("cognee.retrieval.context_length", len(context))
+            elif isinstance(context, list):
+                span.set_attribute("cognee.retrieval.context_items", len(context))
+    except Exception as exc:
+        attach_stage(exc, "graph_retrieval")
+        raise
+
+    await emit("graph_retrieval", "completed", stage_detail(object_count=obj_count))
 
     if only_context:
         return retrieved_objects, context, None
 
-    with new_span("cognee.retrieval.get_completion") as span:
-        span.set_attribute("cognee.retrieval.retriever", retriever_class)
-        completion_kwargs = {
-            "query": raw_query,
-            "retrieved_objects": retrieved_objects,
-            "context": context,
-        }
-        completion_method = retriever.get_completion_from_context
-        if _method_accepts_kwarg(completion_method, "effective_query"):
-            completion_kwargs["effective_query"] = effective_query
-        if _method_accepts_kwarg(completion_method, "turn_preparation"):
-            completion_kwargs["turn_preparation"] = turn_preparation
-        completion = await completion_method(**completion_kwargs)
-        if isinstance(completion, str):
-            span.set_attribute("cognee.retrieval.completion_length", len(completion))
-        span.set_attribute(
-            COGNEE_RESULT_SUMMARY,
-            f"{retriever_class} generated completion",
-        )
+    # llm_generation stage: started only — the LLM call is the long, silent phase the stream's
+    # keepalives protect.
+    await emit("llm_generation", "started", stage_detail())
+
+    try:
+        with new_span("cognee.retrieval.get_completion") as span:
+            span.set_attribute("cognee.retrieval.retriever", retriever_class)
+            completion_kwargs = {
+                "query": raw_query,
+                "retrieved_objects": retrieved_objects,
+                "context": context,
+            }
+            completion_method = retriever.get_completion_from_context
+            if _method_accepts_kwarg(completion_method, "effective_query"):
+                completion_kwargs["effective_query"] = effective_query
+            if _method_accepts_kwarg(completion_method, "turn_preparation"):
+                completion_kwargs["turn_preparation"] = turn_preparation
+            completion = await completion_method(**completion_kwargs)
+            if isinstance(completion, str):
+                span.set_attribute("cognee.retrieval.completion_length", len(completion))
+            span.set_attribute(
+                COGNEE_RESULT_SUMMARY,
+                f"{retriever_class} generated completion",
+            )
+    except Exception as exc:
+        attach_stage(exc, "llm_generation")
+        raise
 
     return retrieved_objects, context, completion
 

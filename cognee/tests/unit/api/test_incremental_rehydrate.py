@@ -41,6 +41,9 @@ def _stored_node(text: str, chunk_index: int, **extra) -> dict:
         "version": 3,
         "topological_rank": 5,
         "external_metadata": '{"created_at": "2024-01-15"}',
+        "page_start": 3,
+        "page_end": 4,
+        "section": "Results > Revenue",
     }
     node.update(extra)
     return node
@@ -67,6 +70,9 @@ def test_rehydrate_preserves_every_model_field():
     assert chunk.content_hash  # backfilled from text when the node lacks it
     assert chunk.max_chunk_tokens == 60
     assert chunk.external_metadata == '{"created_at": "2024-01-15"}'
+    assert chunk.page_start == 3
+    assert chunk.page_end == 4
+    assert chunk.section == "Results > Revenue"
 
 
 def test_rehydrate_tolerates_missing_and_malformed_fields():
@@ -83,6 +89,10 @@ def test_rehydrate_tolerates_missing_and_malformed_fields():
     assert chunk.max_chunk_tokens is None  # legacy nodes have no recorded budget
     # A node written before the field existed inherits the document's (here: empty) metadata.
     assert chunk.external_metadata is None
+    # Chunks stored before the locator fields existed simply have none.
+    assert chunk.page_start is None
+    assert chunk.page_end is None
+    assert chunk.section is None
 
 
 def test_rehydrate_copies_the_stored_external_metadata_not_the_documents():

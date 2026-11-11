@@ -166,6 +166,9 @@ def _assemble_final_chunks(
                         importance_weight=region_chunk.importance_weight,
                         document_id=str(document.id),
                         document_name=document.name,
+                        page_start=region_chunk.page_start,
+                        page_end=region_chunk.page_end,
+                        section=region_chunk.section,
                     )
                 )
                 final_index += 1

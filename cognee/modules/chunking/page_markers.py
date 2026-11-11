@@ -20,7 +20,6 @@ per document.
 """
 
 import re
-from typing import Optional, Tuple
 
 # The literal the loaders emit: "Page 12:" alone on its line. Multiline mode so
 # ^ and $ anchor to line boundaries inside the chunk, not just its ends.
@@ -39,9 +38,9 @@ class PageTracker:
     """
 
     def __init__(self) -> None:
-        self._current_page: Optional[int] = None
+        self._current_page: int | None = None
 
-    def stamp(self, text: str) -> Tuple[Optional[int], Optional[int]]:
+    def stamp(self, text: str) -> tuple[int | None, int | None]:
         """Return ``(page_start, page_end)`` for one chunk and advance the tracker.
 
         Parameters

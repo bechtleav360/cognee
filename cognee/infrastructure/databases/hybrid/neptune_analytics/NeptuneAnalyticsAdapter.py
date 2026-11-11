@@ -51,6 +51,9 @@ class IndexSchema(DataPoint):
     # Document external_metadata as JSON text, copied onto chunks at ingest so
     # hybrid retrieval can surface allowlisted keys straight from the payload.
     external_metadata: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    section: str | None = None
     belongs_to_set: list[str] = []
     metadata: dict = {"index_fields": ["text"]}
 
@@ -530,6 +533,9 @@ class NeptuneAnalyticsAdapter(NeptuneGraphDB, VectorDBInterface):
                     source_chunk_id=getattr(data_point, "source_chunk_id", None),
                     importance_weight=getattr(data_point, "importance_weight", None),
                     external_metadata=getattr(data_point, "external_metadata", None),
+                    page_start=getattr(data_point, "page_start", None),
+                    page_end=getattr(data_point, "page_end", None),
+                    section=getattr(data_point, "section", None),
                 )
                 for data_point in data_points
             ],
@@ -608,6 +614,9 @@ class NeptuneAnalyticsAdapter(NeptuneGraphDB, VectorDBInterface):
                     chunk_index=getattr(dp, "chunk_index", None),
                     source_chunk_id=getattr(dp, "source_chunk_id", None),
                     importance_weight=getattr(dp, "importance_weight", None),
+                    page_start=getattr(dp, "page_start", None),
+                    page_end=getattr(dp, "page_end", None),
+                    section=getattr(dp, "section", None),
                     belongs_to_set=dp.belongs_to_set or [],
                 )
                 for dp in points

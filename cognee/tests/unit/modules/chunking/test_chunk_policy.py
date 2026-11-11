@@ -135,6 +135,19 @@ def test_fresh_region_chunks_carry_the_document_external_metadata():
     assert all(chunk.external_metadata == '{"created_at": "2024-01-15"}' for chunk in plan.fresh)
 
 
+def test_fresh_region_chunks_carry_the_page_locator_the_chunker_stamped():
+    """The assembler re-mints fresh chunks field by field, so it must copy the locators too."""
+    texts = ["Page 1:\nAlpha.\n\n", "Page 2:\nBeta.\n\n", "Gamma.\n"]
+    old = "".join(texts)
+    new = "Page 1:\nAlpha.\n\nPage 2:\nBeta EDITED.\n\nGamma.\n"
+
+    plan = _plan(old, _stored(texts), new)
+
+    edited = [chunk for chunk in plan.fresh if "EDITED" in chunk.text]
+    assert edited, "expected the edited paragraph to be re-chunked"
+    assert all(chunk.page_start == 2 and chunk.page_end == 2 for chunk in edited)
+
+
 def test_three_disjoint_edits_are_three_regions():
     texts = ["Alpha.\n\n", "Beta.\n\n", "Gamma.\n\n", "Delta.\n\n", "Epsilon.\n"]
     old = "".join(texts)

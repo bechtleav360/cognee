@@ -489,6 +489,12 @@ def _rehydrate_chunk(document: Document, node: dict, chunk_index: int) -> Docume
         # Stored as JSON text; a graph backend that hands back a dict is
         # re-serialised so the field survives the MERGE either way.
         external_metadata=normalize_external_metadata(node.get("external_metadata")),
+        # Locators were stamped from the original text and the chunk text is
+        # unchanged, so the stored values stay correct; dropping them here would
+        # erase them on MERGE.
+        page_start=node.get("page_start"),
+        page_end=node.get("page_end"),
+        section=node.get("section"),
         truth_alignment=truth_alignment if isinstance(truth_alignment, list) else None,
         truth_epoch=node.get("truth_epoch"),
         ontology_valid=bool(node.get("ontology_valid", False)),

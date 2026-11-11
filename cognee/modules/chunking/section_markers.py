@@ -20,7 +20,6 @@ per document.
 """
 
 import re
-from typing import Dict, Optional
 
 # Standard Markdown ATX heading: 1-6 '#' characters, whitespace, then the text.
 # Multiline mode so ^ and $ anchor to line boundaries inside the chunk.
@@ -51,9 +50,9 @@ class SectionTracker:
     """
 
     def __init__(self) -> None:
-        self._headings: Dict[int, str] = {}
+        self._headings: dict[int, str] = {}
 
-    def stamp(self, text: str) -> Optional[str]:
+    def stamp(self, text: str) -> str | None:
         """Return the breadcrumb for one chunk and advance the tracker.
 
         The breadcrumb is the heading path in effect at the *end* of this

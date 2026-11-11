@@ -18,6 +18,9 @@ REFERENCE_FIELDS = (
     "chunk_index",
     "source_chunk_id",
     "external_metadata",
+    "page_start",
+    "page_end",
+    "section",
 )
 
 
@@ -76,6 +79,9 @@ def test_index_schema_round_trips_reference_fields(name, schema_cls):
         source_chunk_id="33333333-3333-3333-3333-333333333333",
         importance_weight=0.8,
         external_metadata='{"created_at": "2024-01-15"}',
+        page_start=3,
+        page_end=4,
+        section="Results > Revenue",
     )
     dumped = instance.model_dump()
     assert dumped["document_id"] == "22222222-2222-2222-2222-222222222222"
@@ -86,3 +92,6 @@ def test_index_schema_round_trips_reference_fields(name, schema_cls):
     # JSON text, not a dict: LanceDB maps the payload model onto an Arrow
     # struct and has no Arrow type for a free-form dict.
     assert dumped["external_metadata"] == '{"created_at": "2024-01-15"}'
+    assert dumped["page_start"] == 3
+    assert dumped["page_end"] == 4
+    assert dumped["section"] == "Results > Revenue"

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
+import { normalizeDatasetStatusResponse } from "@/modules/datasets/datasetStatusDetail";
 import { useUser } from "@/modules/users/UserContext";
 import { SEARCH_SESSION_PREFIX, sumTokens } from "@/modules/sessions/getSessions";
 
@@ -488,21 +489,20 @@ export function AgentActivityTerminal({
     demoStartedRef.current = true; // never replays within this mount (e.g. after "clear searches")
     let cancelled = false;
     (async () => {
-      // Vendoring deviation from upstream: only demo against datasets whose
-      // processing has actually COMPLETED. The trigger conditions above say
-      // nothing about pipeline state, so on a fresh account the demo used to
-      // race a still-running cognify and surface NoDataError 404s that read
-      // as a failed upload.
+      // Only demo against datasets whose processing has actually COMPLETED.
+      // The trigger conditions above say nothing about pipeline state, so on a
+      // fresh account the demo used to race a still-running cognify and surface
+      // NoDataError 404s that read as a failed upload.
       let readyDatasetIds: string[] = [];
       try {
         const response = await cogniInstance.fetch("/v1/datasets/status");
         if (response.ok) {
-          const statuses: Record<string, string> = await response.json();
+          const statuses = normalizeDatasetStatusResponse(await response.json());
           readyDatasetIds = datasets
-            .filter((d) => statuses[d.id] === "DATASET_PROCESSING_COMPLETED")
+            .filter((d) => statuses[d.id]?.status === "DATASET_PROCESSING_COMPLETED")
             .map((d) => d.id);
         }
-      } catch { /* status unavailable — treat as not ready */ }
+      } catch { /* status unavailable -- treat as not ready */ }
       if (cancelled) return;
       if (readyDatasetIds.length === 0) {
         // Nothing fully processed yet. Release the one-shot guard and skip the

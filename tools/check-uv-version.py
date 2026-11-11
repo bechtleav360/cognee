@@ -1,11 +1,12 @@
 """Refuse a lock/pyproject change made with a uv too old to read this project's settings.
 
-Both pyproject files set a *relative* resolution window:
+Every pyproject file in the repository (the root, cognee-mcp and the cognee-connectors
+workspace) sets a *relative* resolution window:
 
     [tool.uv]
     exclude-newer = "2 days"
 
-A uv older than MINIMUM cannot parse that value. It does not stop — it aborts settings
+A uv older than MINIMUM cannot parse that value. It does not stop -- it aborts settings
 discovery with a warning and then resolves with no window at all, writing a lock file that
 looks entirely normal while ignoring the project's resolution policy and dropping the
 [options] block that records it. `uv lock` exits 0, and the damage is only visible to
@@ -15,8 +16,8 @@ uv's own `required-version` cannot guard this: it lives in the same [tool.uv] ta
 parse failure discards it too, and any uv able to read it is new enough by definition.
 Hence an external check.
 
-Runs from .pre-commit-config.yaml, restricted to the four files whose contents a stale uv
-would corrupt. pre-commit also runs in CI, so this covers both.
+Runs from .pre-commit-config.yaml, restricted to the pyproject and lock files whose
+contents a stale uv would corrupt. pre-commit also runs in CI, so this covers both.
 """
 
 import re
@@ -39,7 +40,7 @@ def installed_version() -> tuple[int, int, int]:
         sys.exit(
             "uv is not installed, but this commit changes a file uv owns "
             "(pyproject.toml or uv.lock). Install uv "
-            f">={'.'.join(map(str, MINIMUM))} — see https://docs.astral.sh/uv/"
+            f">={'.'.join(map(str, MINIMUM))} -- see https://docs.astral.sh/uv/"
         )
 
     try:

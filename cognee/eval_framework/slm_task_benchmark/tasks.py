@@ -16,9 +16,10 @@ coping, rather than only whether they do.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from cognee.infrastructure.llm.prompts import read_query_prompt, render_prompt
 from cognee.root_dir import get_absolute_path

@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 # Score at or above which two float scores are treated as agreeing (see chunk_similarity).
 SIMILARITY_SCORE_TOLERANCE = 0.2
